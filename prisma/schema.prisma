@@ -1,0 +1,100 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Administrator {
+  id           String   @id @default(uuid())
+  username     String   @unique
+  emailAddress String   @unique @map("email_address")
+  password     String
+  enabled      Boolean  @default(true)
+  refreshToken String?  @map("refresh_token")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("administrators")
+}
+
+model App {
+  id             String   @id @default(uuid())
+  name           String
+  apiKey         String   @unique @map("api_key")
+  apiSecret      String   @map("api_secret")
+  firebaseConfig Json     @map("firebase_config")
+  enabled        Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  users         User[]
+  notifications Notification[]
+
+  @@map("apps")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  reference String
+  appId     String   @map("app_id")
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  app     App           @relation(fields: [appId], references: [id], onDelete: Cascade)
+  devices DeviceToken[]
+
+  @@unique([reference, appId])
+  @@map("users")
+}
+
+model DeviceToken {
+  id        String   @id @default(uuid())
+  token     String
+  osType    OsType   @map("os_type")
+  userId    String   @map("user_id")
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token, userId])
+  @@map("device_tokens")
+}
+
+model Notification {
+  id        String             @id @default(uuid())
+  appId     String             @map("app_id")
+  type      NotificationType
+  payload   Json
+  status    NotificationStatus @default(PENDING)
+  result    Json?
+  createdAt DateTime           @default(now()) @map("created_at")
+
+  app App @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+enum OsType {
+  android
+  ios
+  web
+}
+
+enum NotificationType {
+  send
+  sendEach
+  sendEachForMulticast
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  PARTIAL
+}
