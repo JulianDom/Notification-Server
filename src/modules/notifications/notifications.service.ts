@@ -88,8 +88,10 @@ export class NotificationsService {
 
     const message: admin.messaging.Message = {
       token: tokens[0],
-      ...(firebaseData.notification && { notification: firebaseData.notification }),
-      ...(firebaseData.data && { data: firebaseData.data }),
+      notification: firebaseData.notification,
+      data: firebaseData.data,
+      android: firebaseData.android,
+      apns: firebaseData.apns,
     };
 
     const messageId = await messaging.send(message);
@@ -129,8 +131,10 @@ export class NotificationsService {
       try {
         const message: admin.messaging.Message = {
           token: tokens[0],
-          ...(firebaseData.notification && { notification: firebaseData.notification }),
-          ...(firebaseData.data && { data: firebaseData.data }),
+          notification: firebaseData.notification,
+          data: firebaseData.data,
+          android: firebaseData.android,
+          apns: firebaseData.apns,
         };
 
         const messageId = await messaging.send(message);
@@ -184,8 +188,10 @@ export class NotificationsService {
 
       const message: admin.messaging.MulticastMessage = {
         tokens: batchTokens,
-        ...(firebaseData.notification && { notification: firebaseData.notification }),
-        ...(firebaseData.data && { data: firebaseData.data }),
+        notification: firebaseData.notification,
+        data: firebaseData.data,
+        android: firebaseData.android,
+        apns: firebaseData.apns,
       };
 
       const batchResponse = await messaging.sendEachForMulticast(message);

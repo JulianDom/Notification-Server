@@ -48,6 +48,20 @@ export class BaseMessage {
   @IsObject()
   @IsOptional()
   data?: Record<string, string>;
+
+  @ApiPropertyOptional({
+    description: 'Configuración específica de Android (channelId, sound, priority, etc.)',
+  })
+  @IsObject()
+  @IsOptional()
+  android?: Record<string, any>;
+
+  @ApiPropertyOptional({
+    description: 'Configuración específica de APNs (iOS)',
+  })
+  @IsObject()
+  @IsOptional()
+  apns?: Record<string, any>;
 }
 
 export class SendNotificationDto {
