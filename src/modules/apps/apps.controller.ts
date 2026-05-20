@@ -8,6 +8,7 @@ import {
   Param,
   UseGuards,
   NotFoundException,
+  Logger,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiHeader, ApiSecurity } from '@nestjs/swagger';
 import { AppsService } from './apps.service';
@@ -20,6 +21,8 @@ import { EnsureUserDto } from '../users/dto/ensure-user.dto';
 @ApiTags('Apps')
 @Controller('v1/apps')
 export class AppsController {
+  private readonly logger = new Logger(AppsController.name);
+
   constructor(
     private readonly appsService: AppsService,
     private readonly usersService: UsersService,
@@ -29,8 +32,14 @@ export class AppsController {
   @ApiOperation({ summary: 'Registrar dispositivo para recibir notificaciones (uso desde app cliente)' })
   async registerDevice(@Param('appId') appId: string, @Body() dto: EnsureUserDto) {
     const app = await this.appsService.findOne(appId).catch(() => null);
-    if (!app || !app.data) throw new NotFoundException('App not found');
-    return this.usersService.ensure(appId, dto);
+    if (!app || !app.data) {
+      this.logger.warn(`[REGISTER_DEVICE] ⚠️ App not found: appId=${appId}`);
+      throw new NotFoundException('App not found');
+    }
+    this.logger.log(`[REGISTER_DEVICE] reference=${dto.reference} osType=${dto.osType} token=${dto.token.substring(0, 20)}... appId=${appId}`);
+    const result = await this.usersService.ensure(appId, dto);
+    this.logger.log(`[REGISTER_DEVICE] ✅ reference=${dto.reference} registered/updated`);
+    return result;
   }
 
   @Post()

@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AppsService } from '../apps/apps.service';
 import { UsersService } from '../users/users.service';
@@ -8,6 +8,8 @@ import * as admin from 'firebase-admin';
 
 @Injectable()
 export class NotificationsService {
+  private readonly logger = new Logger(NotificationsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly appsService: AppsService,
@@ -15,10 +17,11 @@ export class NotificationsService {
   ) {}
 
   async send(appId: string, dto: SendNotificationDto) {
+    this.logger.log(`[SEND] appId=${appId} type=${dto.type} forAll=${dto.forAll} references=${JSON.stringify(dto.references)}`);
+
     const firebaseApp = await this.appsService.getFirebaseApp(appId);
     const messaging = firebaseApp.messaging();
 
-    // Create notification record
     const notification = await this.prisma.notification.create({
       data: {
         appId,
@@ -45,7 +48,8 @@ export class NotificationsService {
           throw new BadRequestException(`Invalid notification type: ${dto.type}`);
       }
 
-      // Update notification with result
+      this.logger.log(`[SEND] ✅ notificationId=${notification.id} success=${result.successCount} failures=${result.failureCount ?? 0}`);
+
       await this.prisma.notification.update({
         where: { id: notification.id },
         data: {
@@ -56,12 +60,14 @@ export class NotificationsService {
 
       return {};
     } catch (error) {
-      // Update notification with error
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error(`[SEND] ❌ notificationId=${notification.id} error=${msg}`);
+
       await this.prisma.notification.update({
         where: { id: notification.id },
         data: {
           status: NotificationStatus.FAILED,
-          result: { error: error instanceof Error ? error.message : 'Unknown error' },
+          result: { error: msg },
         },
       });
 
@@ -80,7 +86,9 @@ export class NotificationsService {
     }
 
     const tokens = await this.usersService.getActiveTokens(appId, [reference]);
+    this.logger.log(`[SEND_SINGLE] reference=${reference} tokens=${tokens.length}`);
     if (tokens.length === 0) {
+      this.logger.warn(`[SEND_SINGLE] ⚠️ No tokens for reference=${reference} appId=${appId}`);
       throw new BadRequestException('No active tokens found for the specified user');
     }
 
@@ -161,6 +169,7 @@ export class NotificationsService {
 
     if (dto.forAll) {
       tokens = await this.usersService.getAllActiveTokens(appId);
+      this.logger.log(`[SEND_MULTICAST] forAll=true tokens=${tokens.length}`);
     } else {
       if (!dto.references || dto.references.length === 0) {
         throw new BadRequestException(
@@ -169,9 +178,11 @@ export class NotificationsService {
       }
       const references = Array.isArray(dto.references) ? dto.references : [dto.references];
       tokens = await this.usersService.getActiveTokens(appId, references);
+      this.logger.log(`[SEND_MULTICAST] references=${JSON.stringify(references)} tokens=${tokens.length}`);
     }
 
     if (tokens.length === 0) {
+      this.logger.warn(`[SEND_MULTICAST] ⚠️ No tokens found. appId=${appId} forAll=${dto.forAll} references=${JSON.stringify(dto.references)}`);
       throw new BadRequestException('No active tokens found for the specified criteria');
     }
 
