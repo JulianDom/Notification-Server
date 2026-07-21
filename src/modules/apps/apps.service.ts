@@ -9,6 +9,7 @@ import * as admin from 'firebase-admin';
 @Injectable()
 export class AppsService {
   private firebaseApps: Map<string, admin.app.App> = new Map();
+  private firebaseAppInits: Map<string, Promise<admin.app.App>> = new Map();
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -140,11 +141,27 @@ export class AppsService {
   }
 
   async getFirebaseApp(appId: string): Promise<admin.app.App> {
-    // Check cache first
+    // Check resolved cache first
     if (this.firebaseApps.has(appId)) {
       return this.firebaseApps.get(appId)!;
     }
 
+    // Concurrent callers for the same appId must await the same in-flight
+    // initialization instead of each racing admin.initializeApp(), which
+    // throws on the second call for a given app name.
+    const inFlight = this.firebaseAppInits.get(appId);
+    if (inFlight) {
+      return inFlight;
+    }
+
+    const initPromise = this.initializeFirebaseApp(appId).finally(() => {
+      this.firebaseAppInits.delete(appId);
+    });
+    this.firebaseAppInits.set(appId, initPromise);
+    return initPromise;
+  }
+
+  private async initializeFirebaseApp(appId: string): Promise<admin.app.App> {
     // Load from database
     const app = await this.prisma.app.findUnique({
       where: { id: appId },
