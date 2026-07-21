@@ -2,7 +2,7 @@ import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AppsService } from '../apps/apps.service';
 import { UsersService } from '../users/users.service';
-import { SendNotificationDto, NotificationType } from './dto/send-notification.dto';
+import { SendNotificationDto, NotificationType, BaseMessage } from './dto/send-notification.dto';
 import { NotificationStatus } from '@prisma/client';
 import * as admin from 'firebase-admin';
 
@@ -75,6 +75,20 @@ export class NotificationsService {
     }
   }
 
+  private withImageUrl(firebaseData: BaseMessage) {
+    const imageUrl = firebaseData.notification?.imageUrl;
+    if (!imageUrl) {
+      return firebaseData.android;
+    }
+    return {
+      ...firebaseData.android,
+      notification: {
+        ...firebaseData.android?.notification,
+        imageUrl,
+      },
+    };
+  }
+
   private async sendSingle(
     messaging: admin.messaging.Messaging,
     appId: string,
@@ -98,7 +112,7 @@ export class NotificationsService {
       token: tokens[0],
       notification: firebaseData.notification,
       data: firebaseData.data,
-      android: firebaseData.android,
+      android: this.withImageUrl(firebaseData),
       apns: firebaseData.apns,
     };
 
@@ -141,7 +155,7 @@ export class NotificationsService {
           token: tokens[0],
           notification: firebaseData.notification,
           data: firebaseData.data,
-          android: firebaseData.android,
+          android: this.withImageUrl(firebaseData),
           apns: firebaseData.apns,
         };
 
@@ -201,7 +215,7 @@ export class NotificationsService {
         tokens: batchTokens,
         notification: firebaseData.notification,
         data: firebaseData.data,
-        android: firebaseData.android,
+        android: this.withImageUrl(firebaseData),
         apns: firebaseData.apns,
       };
 

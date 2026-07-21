@@ -1,11 +1,24 @@
-import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { NestFactory, HttpAdapterHost } from '@nestjs/core';
+import { ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 
+const requestLogger = new Logger('HTTP');
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // Log every incoming request
+  app.use((req: any, res: any, next: any) => {
+    const { method, originalUrl, ip } = req;
+    const body = req.body ? JSON.stringify(req.body).substring(0, 200) : '';
+    requestLogger.log(`${method} ${originalUrl} — ip=${ip} body=${body}`);
+    res.on('finish', () => {
+      requestLogger.log(`${method} ${originalUrl} → ${res.statusCode}`);
+    });
+    next();
+  });
 
   // Security
   app.use(helmet());

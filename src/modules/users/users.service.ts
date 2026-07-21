@@ -53,6 +53,15 @@ export class UsersService {
       const existingDevice = user.devices.find((d) => d.token === dto.token);
 
       if (!existingDevice) {
+        // Deactivate other active tokens for this user/osType before adding the new one,
+        // so a device that re-registers (app reinstall, token rotation) never leaves
+        // stale tokens active — FCM sends would otherwise fan out to dead tokens or
+        // duplicate across every token still valid on the same physical device.
+        await this.prisma.deviceToken.updateMany({
+          where: { userId: user.id, osType: dto.osType as OsType, active: true },
+          data: { active: false },
+        });
+
         // Add new device
         await this.prisma.deviceToken.create({
           data: {
@@ -62,12 +71,25 @@ export class UsersService {
             active: true,
           },
         });
-      } else if (!existingDevice.active) {
-        // Reactivate device
-        await this.prisma.deviceToken.update({
-          where: { id: existingDevice.id },
-          data: { active: true },
+      } else {
+        // Deactivate any other active token for this user/osType, keeping only this device active
+        await this.prisma.deviceToken.updateMany({
+          where: {
+            userId: user.id,
+            osType: dto.osType as OsType,
+            active: true,
+            id: { not: existingDevice.id },
+          },
+          data: { active: false },
         });
+
+        if (!existingDevice.active) {
+          // Reactivate device
+          await this.prisma.deviceToken.update({
+            where: { id: existingDevice.id },
+            data: { active: true },
+          });
+        }
       }
 
       // Reload user with updated devices
