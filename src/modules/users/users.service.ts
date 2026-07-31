@@ -9,46 +9,32 @@ export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
   async ensure(appId: string, dto: EnsureUserDto) {
-    // Find or create user
-    let user = await this.prisma.user.findUnique({
+    // `upsert` (not findUnique + create/update) so two concurrent register-device
+    // calls for the same brand-new (reference, appId) can't both see "no user"
+    // and both attempt create(), which previously threw a P2002 unique constraint
+    // error and surfaced as a 500 to the app on double-registration (e.g. a
+    // React effect firing twice, or a retry racing the original request).
+    let user = await this.prisma.user.upsert({
       where: {
         reference_appId: {
           reference: dto.reference,
           appId,
         },
       },
+      create: {
+        reference: dto.reference,
+        appId,
+        enabled: true,
+      },
+      update: {
+        enabled: true,
+      },
       include: {
         devices: true,
       },
     });
 
-    if (!user) {
-      // Create new user with device
-      user = await this.prisma.user.create({
-        data: {
-          reference: dto.reference,
-          appId,
-          enabled: true,
-          devices: {
-            create: {
-              token: dto.token,
-              osType: dto.osType as OsType,
-              active: true,
-            },
-          },
-        },
-        include: {
-          devices: true,
-        },
-      });
-    } else {
-      // Update user to enabled
-      user = await this.prisma.user.update({
-        where: { id: user.id },
-        data: { enabled: true },
-        include: { devices: true },
-      });
-
+    {
       // Check if device already exists
       const existingDevice = user.devices.find((d) => d.token === dto.token);
 
@@ -62,12 +48,23 @@ export class UsersService {
           data: { active: false },
         });
 
-        // Add new device
-        await this.prisma.deviceToken.create({
-          data: {
+        // Add new device. `upsert` on the same (token, userId) unique constraint
+        // for the same reason as the user upsert above: two concurrent calls
+        // registering the identical token must not race a plain create().
+        await this.prisma.deviceToken.upsert({
+          where: {
+            token_userId: {
+              token: dto.token,
+              userId: user.id,
+            },
+          },
+          create: {
             token: dto.token,
             osType: dto.osType as OsType,
             userId: user.id,
+            active: true,
+          },
+          update: {
             active: true,
           },
         });
@@ -93,10 +90,13 @@ export class UsersService {
       }
 
       // Reload user with updated devices
-      user = await this.prisma.user.findUnique({
+      const reloaded = await this.prisma.user.findUnique({
         where: { id: user.id },
         include: { devices: true },
-      })!;
+      });
+      if (reloaded) {
+        user = reloaded;
+      }
     }
 
     return {
