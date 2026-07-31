@@ -49,6 +49,11 @@ export class NotificationsService {
       }
 
       this.logger.log(`[SEND] ✅ notificationId=${notification.id} success=${result.successCount} failures=${result.failureCount ?? 0}`);
+      if (Array.isArray(result.responses)) {
+        result.responses.forEach((r: any, i: number) => {
+          this.logger.log(`[SEND] [RESPONSE ${i}] success=${r.success} messageId=${r.messageId ?? '-'} error=${r.error ?? '-'}`);
+        });
+      }
 
       await this.prisma.notification.update({
         where: { id: notification.id },
