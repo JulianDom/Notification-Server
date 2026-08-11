@@ -17,6 +17,7 @@ import { UpdateAppDto } from './dto/update-app.dto';
 import { AdminGuard } from '../auth/guards/admin.guard';
 import { UsersService } from '../users/users.service';
 import { EnsureUserDto } from '../users/dto/ensure-user.dto';
+import { DeactivateTokenDto } from '../users/dto/deactivate-token.dto';
 
 @ApiTags('Apps')
 @Controller('v1/apps')
@@ -40,6 +41,15 @@ export class AppsController {
     const result = await this.usersService.ensure(appId, dto);
     this.logger.log(`[REGISTER_DEVICE] ✅ reference=${dto.reference} registered/updated`);
     return result;
+  }
+
+  @Post(':appId/unregister-device')
+  @ApiOperation({ summary: 'Desregistrar dispositivo (uso desde app cliente, ej. logout)' })
+  async unregisterDevice(@Param('appId') appId: string, @Body() dto: DeactivateTokenDto) {
+    this.logger.log(`[UNREGISTER_DEVICE] reference=${dto.reference} token=${dto.token.substring(0, 20)}... appId=${appId}`);
+    await this.usersService.deactivateToken(appId, dto);
+    this.logger.log(`[UNREGISTER_DEVICE] ✅ reference=${dto.reference} deactivated`);
+    return { data: { success: true } };
   }
 
   @Post()

@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EnsureUserDto } from './dto/ensure-user.dto';
 import { UnEnsureUserDto } from './dto/unensure-user.dto';
+import { DeactivateTokenDto } from './dto/deactivate-token.dto';
 import { OsType } from '@prisma/client';
 
 @Injectable()
@@ -155,6 +156,25 @@ export class UsersService {
         })),
       },
     };
+  }
+
+  async deactivateToken(appId: string, dto: DeactivateTokenDto): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: {
+        reference_appId: {
+          reference: dto.reference,
+          appId,
+        },
+      },
+    });
+
+    // Logout no debe fallar si el usuario/token ya no existe (doble logout, token ya rotado, etc).
+    if (!user) return;
+
+    await this.prisma.deviceToken.updateMany({
+      where: { userId: user.id, token: dto.token },
+      data: { active: false },
+    });
   }
 
   async getActiveTokens(appId: string, references: string[]): Promise<string[]> {

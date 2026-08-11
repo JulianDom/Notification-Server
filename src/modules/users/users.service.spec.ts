@@ -2,6 +2,48 @@ import { Test } from '@nestjs/testing';
 import { UsersService } from './users.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
+describe('UsersService.deactivateToken — desregistro de un dispositivo puntual (logout)', () => {
+  let service: UsersService;
+  let prisma: {
+    user: { findUnique: jest.Mock };
+    deviceToken: { updateMany: jest.Mock };
+  };
+
+  beforeEach(async () => {
+    prisma = {
+      user: { findUnique: jest.fn() },
+      deviceToken: { updateMany: jest.fn() },
+    };
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [UsersService, { provide: PrismaService, useValue: prisma }],
+    }).compile();
+
+    service = moduleRef.get(UsersService);
+  });
+
+  it('desactiva únicamente el DeviceToken indicado del usuario, sin tocar sus otros dispositivos', async () => {
+    prisma.user.findUnique.mockResolvedValue({ id: 'user-1', reference: 'ref-1', appId: 'app-1' });
+    prisma.deviceToken.updateMany.mockResolvedValue({ count: 1 });
+
+    await service.deactivateToken('app-1', { reference: 'ref-1', token: 'token-a' } as any);
+
+    expect(prisma.deviceToken.updateMany).toHaveBeenCalledWith({
+      where: { userId: 'user-1', token: 'token-a' },
+      data: { active: false },
+    });
+  });
+
+  it('si el usuario no existe, no lanza error y no toca la base', async () => {
+    prisma.user.findUnique.mockResolvedValue(null);
+
+    await expect(service.deactivateToken('app-1', { reference: 'ref-inexistente', token: 'token-a' } as any))
+      .resolves.not.toThrow();
+
+    expect(prisma.deviceToken.updateMany).not.toHaveBeenCalled();
+  });
+});
+
 describe('UsersService.ensure — un solo token activo por (usuario, osType)', () => {
   let service: UsersService;
   let prisma: {
