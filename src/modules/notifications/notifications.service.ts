@@ -5,6 +5,7 @@ import { UsersService } from '../users/users.service';
 import { SendNotificationDto, NotificationType, BaseMessage } from './dto/send-notification.dto';
 import { NotificationStatus } from '@prisma/client';
 import * as admin from 'firebase-admin';
+import { ExpoPushService, isExpoPushToken } from './expo-push.service';
 
 @Injectable()
 export class NotificationsService {
@@ -14,6 +15,7 @@ export class NotificationsService {
     private readonly prisma: PrismaService,
     private readonly appsService: AppsService,
     private readonly usersService: UsersService,
+    private readonly expoPushService: ExpoPushService,
   ) {}
 
   async send(appId: string, dto: SendNotificationDto) {
@@ -113,6 +115,16 @@ export class NotificationsService {
 
     const firebaseData = Array.isArray(dto.firebaseData) ? dto.firebaseData[0] : dto.firebaseData;
 
+    if (isExpoPushToken(tokens[0])) {
+      const expoResult = await this.expoPushService.send([tokens[0]], firebaseData);
+      return {
+        messageId: expoResult.responses[0]?.messageId,
+        successCount: expoResult.successCount,
+        failureCount: expoResult.failureCount,
+        responses: expoResult.responses,
+      };
+    }
+
     const message: admin.messaging.Message = {
       token: tokens[0],
       notification: firebaseData.notification,
@@ -156,6 +168,19 @@ export class NotificationsService {
       }
 
       try {
+        if (isExpoPushToken(tokens[0])) {
+          const expoResult = await this.expoPushService.send([tokens[0]], firebaseData);
+          const response = expoResult.responses[0];
+          if (response?.success) {
+            results.push({ reference, messageId: response.messageId });
+            successCount++;
+          } else {
+            results.push({ reference, error: response?.error ?? 'Expo Push API error' });
+            failureCount++;
+          }
+          continue;
+        }
+
         const message: admin.messaging.Message = {
           token: tokens[0],
           notification: firebaseData.notification,
@@ -207,14 +232,22 @@ export class NotificationsService {
 
     const firebaseData = Array.isArray(dto.firebaseData) ? dto.firebaseData[0] : dto.firebaseData;
 
-    // Firebase has a limit of 500 tokens per multicast
-    const batchSize = 500;
+    // Un mismo destinatario puede tener a la vez un token FCM (Android) y un
+    // Expo Push Token (iOS): cada canal se envía por su lado y los resultados
+    // se suman.
+    const expoTokens = tokens.filter((token) => isExpoPushToken(token));
+    const fcmTokens = tokens.filter((token) => !isExpoPushToken(token));
+    this.logger.log(`[SEND_MULTICAST] fcmTokens=${fcmTokens.length} expoTokens=${expoTokens.length}`);
+
     let successCount = 0;
     let failureCount = 0;
     const responses: any[] = [];
 
-    for (let i = 0; i < tokens.length; i += batchSize) {
-      const batchTokens = tokens.slice(i, i + batchSize);
+    // Firebase has a limit of 500 tokens per multicast
+    const batchSize = 500;
+
+    for (let i = 0; i < fcmTokens.length; i += batchSize) {
+      const batchTokens = fcmTokens.slice(i, i + batchSize);
 
       const message: admin.messaging.MulticastMessage = {
         tokens: batchTokens,
@@ -227,19 +260,28 @@ export class NotificationsService {
       const batchResponse = await messaging.sendEachForMulticast(message);
       successCount += batchResponse.successCount;
       failureCount += batchResponse.failureCount;
-      responses.push(...batchResponse.responses);
+      responses.push(
+        ...batchResponse.responses.map((r) => ({
+          success: r.success,
+          messageId: r.messageId,
+          error: r.error?.message,
+          errorCode: r.error?.code,
+        })),
+      );
+    }
+
+    if (expoTokens.length > 0) {
+      const expoResult = await this.expoPushService.send(expoTokens, firebaseData);
+      successCount += expoResult.successCount;
+      failureCount += expoResult.failureCount;
+      responses.push(...expoResult.responses);
     }
 
     return {
       successCount,
       failureCount,
       totalTokens: tokens.length,
-      responses: responses.map((r, i) => ({
-        success: r.success,
-        messageId: r.messageId,
-        error: r.error?.message,
-        errorCode: r.error?.code,
-      })),
+      responses,
     };
   }
 
