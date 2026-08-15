@@ -2,12 +2,17 @@ import { NestFactory, HttpAdapterHost } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
+import * as express from 'express';
 import { AppModule } from './app.module';
 
 const requestLogger = new Logger('HTTP');
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // Allow larger payloads (notification images sent as base64 can exceed Express's 100kb default)
+  app.use(express.json({ limit: '10mb' }));
+  app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
   // Log every incoming request
   app.use((req: any, res: any, next: any) => {
